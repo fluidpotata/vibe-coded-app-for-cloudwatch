@@ -1,56 +1,47 @@
-import sqlite3
+import redis
 import random
 import time
 import threading
 import os
 import json
+from datetime import datetime
 from flask import Flask, render_template, jsonify
 
 app = Flask(__name__)
 
-DB_PATH = os.path.join(os.path.dirname(__file__), 'state.db')
+# Connect to Redis
+redis_client = redis.Redis(host='localhost', port=6379, db=0, decode_responses=True)
 
-def init_db():
-    """Build the state database if it doesn't exist."""
-    with sqlite3.connect(DB_PATH) as conn:
-        conn.execute('''
-            CREATE TABLE IF NOT EXISTS system_state (
-                key TEXT PRIMARY KEY,
-                value REAL
-            )
-        ''')
-        conn.execute('''
-            INSERT OR IGNORE INTO system_state (key, value)
-            VALUES ('base_price', 94.0)
-        ''')
-        conn.execute('''
-            CREATE TABLE IF NOT EXISTS price_history (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                price REAL,
-                timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
-            )
-        ''')
-    print("Database initialized.")
+# Initialize base price if it doesn't exist
+if not redis_client.exists('base_price'):
+    redis_client.set('base_price', 94.0)
 
 def get_base_price():
-    with sqlite3.connect(DB_PATH) as conn:
-        cursor = conn.execute('SELECT value FROM system_state WHERE key = ?', ('base_price',))
-        row = cursor.fetchone()
-        return row[0] if row else 94.0
+    value = redis_client.get('base_price')
+    return float(value) if value is not None else 94.0
 
 def update_base_price(new_price):
-    with sqlite3.connect(DB_PATH) as conn:
-        conn.execute('UPDATE system_state SET value = ? WHERE key = ?', (new_price, 'base_price'))
-        conn.execute('INSERT INTO price_history (price) VALUES (?)', (new_price,))
+    redis_client.set('base_price', new_price)
+    
+    # Store price history as JSON
+    entry = json.dumps({
+        "price": new_price,
+        "time": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    })
+    
+    redis_client.lpush('price_history', entry)
+    # Keep only the last 10 entries
+    redis_client.ltrim('price_history', 0, 9)
 
-def get_price_history(limit=50):
-    with sqlite3.connect(DB_PATH) as conn:
-        cursor = conn.execute('SELECT price, timestamp FROM price_history ORDER BY id DESC LIMIT ?', (limit,))
-        rows = cursor.fetchall()
-        # Return in chronological order for the chart
-        return [{"price": r[0], "time": r[1]} for r in reversed(rows)]
-
-init_db()
+def get_price_history(limit=10):
+    # Fetch from Redis
+    items = redis_client.lrange('price_history', 0, limit - 1)
+    
+    # Parse JSON
+    history = [json.loads(item) for item in items]
+    
+    # Return in chronological order
+    return list(reversed(history))
 
 # Global config for background updater
 DATA_FILE = os.path.join(os.path.dirname(__file__), 'data.json')
