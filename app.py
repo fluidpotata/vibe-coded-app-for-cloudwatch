@@ -82,20 +82,7 @@ def price_updater():
         time.sleep(1)
         if time.time() - LAST_UPDATE_TIME >= NEXT_UPDATE_INTERVAL:
             current_price = get_base_price()
-            # --- REGIME SWITCHING MODEL ---
-
-            regime_probability = random.random()
-
-            if regime_probability < 0.8:
-                # Calm regime, small movement
-                change = random.gauss(0, 1)
-            else:
-                # Volatile regime, large swings
-                change = random.gauss(0, 4)
-
-            # Optional mild trend
-            trend_bias = 0.1
-            change += trend_bias
+            change = random.uniform(-3, 3)
             new_price = max(10, current_price + change)
             
             update_base_price(new_price)
@@ -104,9 +91,9 @@ def price_updater():
             NEXT_UPDATE_INTERVAL = random.randint(5, 10)
             
             # --- STRUCTURED LOGGING ---
-            if new_price < 100:
+            if new_price < 135:
                 logger.warning("CRITICAL_PRICE_DROP", extra={"current_price": round(new_price, 2)})
-            elif new_price > 110:
+            elif new_price > 145:
                 logger.warning("CRITICAL_PRICE_RISE", extra={"current_price": round(new_price, 2)})
             else:
                 logger.info("Persistent price updated", extra={"current_price": round(new_price, 2)})
