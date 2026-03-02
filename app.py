@@ -28,7 +28,7 @@ redis_client = redis.Redis(host='localhost', port=6379, db=0, decode_responses=T
 # Graceful initialization
 try:
     if not redis_client.exists('base_price'):
-        redis_client.set('base_price', 94.0)
+        redis_client.set('base_price', 60.0)
     logger.info("Successfully connected to Redis and initialized state.")
 except redis.ConnectionError:
     logger.error("Failed to connect to Redis on startup. Ensure Redis is running.")
@@ -36,10 +36,10 @@ except redis.ConnectionError:
 def get_base_price():
     try:
         value = redis_client.get('base_price')
-        return float(value) if value is not None else 94.0
+        return float(value) if value is not None else 60.0
     except redis.ConnectionError:
         logger.error("Redis connection error during get_base_price.")
-        return 94.0 # Fallback
+        return 60.0 # Fallback
 
 def update_base_price(new_price):
     try:
@@ -82,7 +82,20 @@ def price_updater():
         time.sleep(1)
         if time.time() - LAST_UPDATE_TIME >= NEXT_UPDATE_INTERVAL:
             current_price = get_base_price()
-            change = random.uniform(-3, 3)
+            # --- REGIME SWITCHING MODEL ---
+
+            regime_probability = random.random()
+
+            if regime_probability < 0.8:
+                # Calm regime, small movement
+                change = random.gauss(0, 1)
+            else:
+                # Volatile regime, large swings
+                change = random.gauss(0, 4)
+
+            # Optional mild trend
+            trend_bias = 0.1
+            change += trend_bias
             new_price = max(10, current_price + change)
             
             update_base_price(new_price)
