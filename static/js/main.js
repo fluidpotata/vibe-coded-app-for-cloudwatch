@@ -16,6 +16,9 @@ document.addEventListener('DOMContentLoaded', () => {
     const countdownBar = document.getElementById('countdown-bar');
     const resetBtn = document.getElementById('reset-btn');
 
+    const dropThresholdEl = document.getElementById('drop-threshold');
+    const riseThresholdEl = document.getElementById('rise-threshold');
+
     let allData = [];
     let prevBasePrice = 0;
     let refreshTimer = 5;
@@ -179,8 +182,46 @@ document.addEventListener('DOMContentLoaded', () => {
 
     refreshBtn.addEventListener('click', () => { fetchData(); startCountdown(); });
 
+    // Fetch Thresholds
+    async function fetchThresholds() {
+        try {
+            const res = await fetch('/api/thresholds');
+            if (res.ok) {
+                const data = await res.json();
+                if (data.price_drop_threshold) {
+                    dropThresholdEl.value = data.price_drop_threshold;
+                }
+                if (data.price_rise_threshold) {
+                    riseThresholdEl.value = data.price_rise_threshold;
+                }
+            }
+        } catch (error) {
+            console.error('Error fetching thresholds:', error);
+        }
+    }
+
+    // Update Thresholds
+    async function updateThresholds() {
+        try {
+            await fetch('/api/thresholds', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    price_drop_threshold: dropThresholdEl.value,
+                    price_rise_threshold: riseThresholdEl.value
+                })
+            });
+        } catch (error) {
+            console.error('Error updating thresholds:', error);
+        }
+    }
+
+    dropThresholdEl.addEventListener('change', updateThresholds);
+    riseThresholdEl.addEventListener('change', updateThresholds);
+
     // Initial Fetch
     initChart();
     fetchData();
+    fetchThresholds();
     startCountdown();
 });

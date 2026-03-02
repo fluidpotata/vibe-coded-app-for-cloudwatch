@@ -28,7 +28,11 @@ redis_client = redis.Redis(host='localhost', port=6379, db=0, decode_responses=T
 # Graceful initialization
 try:
     if not redis_client.exists('base_price'):
-        redis_client.set('base_price', 60.0)
+        redis_client.set('base_price', 85.0)
+    if not redis_client.exists('price_drop_threshold'):
+        redis_client.set('price_drop_threshold', 60.0)
+    if not redis_client.exists('price_rise_threshold'):
+        redis_client.set('price_rise_threshold', 120.0)
     logger.info("Successfully connected to Redis and initialized state.")
 except redis.ConnectionError:
     logger.error("Failed to connect to Redis on startup. Ensure Redis is running.")
@@ -82,7 +86,7 @@ def price_updater():
         time.sleep(1)
         if time.time() - LAST_UPDATE_TIME >= NEXT_UPDATE_INTERVAL:
             current_price = get_base_price()
-            change = random.uniform(-3, 3)
+            change = random.uniform(-9, 9)
             new_price = max(10, current_price + change)
             
             update_base_price(new_price)
@@ -90,11 +94,18 @@ def price_updater():
             LAST_UPDATE_TIME = time.time()
             NEXT_UPDATE_INTERVAL = random.randint(5, 10)
             
+            # Get thresholds from Redis
+            try:
+                drop_threshold = float(redis_client.get('price_drop_threshold') or 135.0)
+                rise_threshold = float(redis_client.get('price_rise_threshold') or 145.0)
+            except (redis.ConnectionError, ValueError, TypeError):
+                drop_threshold, rise_threshold = 135.0, 145.0
+            
             # --- STRUCTURED LOGGING ---
-            if new_price < 135:
-                logger.warning("CRITICAL_PRICE_DROP", extra={"current_price": round(new_price, 2)})
-            elif new_price > 145:
-                logger.warning("CRITICAL_PRICE_RISE", extra={"current_price": round(new_price, 2)})
+            if new_price < drop_threshold:
+                logger.warning("CRITICAL_PRICE_DROP", extra={"current_price": round(new_price, 2), "threshold": drop_threshold})
+            elif new_price > rise_threshold:
+                logger.warning("CRITICAL_PRICE_RISE", extra={"current_price": round(new_price, 2), "threshold": rise_threshold})
             else:
                 logger.info("Persistent price updated", extra={"current_price": round(new_price, 2)})
 
@@ -130,6 +141,32 @@ def get_data():
 def get_history():
     history = get_price_history()
     return jsonify(history)
+
+from flask import request
+
+@app.route('/api/thresholds', methods=['GET', 'POST'])
+def handle_thresholds():
+    if request.method == 'GET':
+        try:
+            drop_threshold = float(redis_client.get('price_drop_threshold') or 135.0)
+            rise_threshold = float(redis_client.get('price_rise_threshold') or 145.0)
+            return jsonify({
+                "price_drop_threshold": drop_threshold,
+                "price_rise_threshold": rise_threshold
+            })
+        except redis.ConnectionError:
+            return jsonify({"error": "Redis connection error"}), 500
+    
+    if request.method == 'POST':
+        data = request.get_json()
+        try:
+            if 'price_drop_threshold' in data:
+                redis_client.set('price_drop_threshold', float(data['price_drop_threshold']))
+            if 'price_rise_threshold' in data:
+                redis_client.set('price_rise_threshold', float(data['price_rise_threshold']))
+            return jsonify({"status": "success"})
+        except (redis.ConnectionError, ValueError, TypeError) as e:
+            return jsonify({"error": str(e)}), 400
 
 if __name__ == '__main__':
     os.makedirs('templates', exist_ok=True)
