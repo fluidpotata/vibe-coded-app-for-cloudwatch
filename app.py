@@ -104,8 +104,10 @@ def price_updater():
             NEXT_UPDATE_INTERVAL = random.randint(5, 10)
             
             # --- STRUCTURED LOGGING ---
-            if new_price < 50:
+            if new_price < 100:
                 logger.warning("CRITICAL_PRICE_DROP", extra={"current_price": round(new_price, 2)})
+            elif new_price > 110:
+                logger.warning("CRITICAL_PRICE_RISE", extra={"current_price": round(new_price, 2)})
             else:
                 logger.info("Persistent price updated", extra={"current_price": round(new_price, 2)})
 
